@@ -127,7 +127,9 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
 - [x] Scan whole project — check if every task is done properly without bugs and failures
   - All tests pass, idempotent seed verified
 - [x] End-of-day upload: commit + push **Day 1** to GitHub
-  - Committed with message "Day 1: Foundation scaffold..."
+  - Created GitHub repo: https://github.com/ADITYA-tp01/mnemos
+  - Pushed master branch with both commits
+  - Commit messages: "Day 1: Foundation scaffold..." and "Day 1: Update task checklist..."
 
 ### Key Learnings
 - **FalkorDB MERGE quirk**: `MERGE (a:ThreatActor)-[:USES]->(t:TTP)` creates new nodes instead of matching existing ones when the pattern doesn't exist. **Solution**: Always MATCH existing nodes first, then CREATE edges.

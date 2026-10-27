@@ -150,7 +150,7 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
 
 ### Tasks
 
-- [ ] Implement `backend/app/agent/memory.py` — the Memory Reader/Writer module:
+- [x] Implement `backend/app/agent/memory.py` — the Memory Reader/Writer module:
   - `recall_ioc(ioc_value)` → runs query R1 (episodic recall: "Have I seen this IoC before?")
     ```cypher
     MATCH (ioc:IoC {value: $ioc})<-[:FOUND]-(inv:Investigation)
@@ -197,10 +197,12 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
 - [ ] End-of-day upload: commit + push **Day 2** to GitHub
 
 ### ✅ Success Criteria
-- All 5 queries (R1–R5) execute correctly from CLI against seeded data
-- Latency is captured and printed for every recall
-- Empty recall returns gracefully (no crashes)
-- Write → recall round-trip works
+- [x] All 5 queries (R1–R5) execute correctly from CLI against seeded data
+- [x] Latency is captured and printed for every recall
+- [x] Empty recall returns gracefully (no crashes)
+- [x] Write → recall round-trip works
+
+---
 
 ---
 

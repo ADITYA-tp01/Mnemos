@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Node / Next.js
+node_modules/
+.npm/
+.next/
+out/
+dist/
+*.tsbuildinfo
+
+# Docker
+docker-compose.override.yml
+*.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# FalkorDB runtime
+dump.rdb
+*.rdb
+
+# OS
+Thumbs.db
+ehthumbs.db

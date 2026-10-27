@@ -1,0 +1,75 @@
+"""Test script for memory module — Day 2 verification.
+
+Seeds graph, tests all recall queries (R1-R4), writes data, then
+verifies recall returns results. Prints latency for each query.
+"""
+import sys
+import os
+sys.path.insert(0, os.path.dirname(__file__))
+os.chdir(os.path.dirname(__file__))
+
+from falkordb import FalkorDB
+from backend.app.agent.memory import Memory
+import seed_scenario
+
+
+def test_memory():
+    db = FalkorDB()
+    mem = Memory(db)
+
+    # Re-seed to ensure clean state
+    print("Re-seeding graph...")
+    seed_scenario.seed(db)
+
+    print("\n=== Testing Empty Recall (No Investigations) ===")
+    tests = [
+        ("R1: recall_ioc", lambda: mem.recall_ioc("powershell-loader-7d3a9b.exe")),
+        ("R2: recall_playbook", lambda: mem.recall_playbook("T1059.001")),
+        ("R3: recall_asset_actor", lambda: mem.recall_asset_actor("ASSET-001")),
+        ("R4: recall_cross_session", lambda: mem.recall_cross_session("INV-001")),
+    ]
+
+    for name, fn in tests:
+        r = fn()
+        assert r["result"] == [], f"{name} should return empty list when no data"
+        assert r["latency_ms"] < 10, f"{name} should be fast (<10ms), got {r['latency_ms']}ms"
+        print(f"  {name}: PASS ({r['latency_ms']}ms)")
+
+    print("\n=== Writing Episodic Memory ===")
+    r = mem.write_investigation("INV-001", "ALERT-001",
+                                ["Found IoC: powershell-loader-7d3a9b.exe"],
+                                "APT-CRIMSON used PowerShell")
+    print(f"  write_investigation: {r['latency_ms']}ms")
+
+    r = mem.write_playbook_result("Network_Segment_Isolation", True)
+    print(f"  write_playbook_result: {r['latency_ms']}ms")
+
+    print("\n=== Testing Recall After Write ===")
+    r = mem.recall_ioc("powershell-loader-7d3a9b.exe")
+    assert len(r["result"]) == 1, f"Expected 1 result, got {len(r['result'])}"
+    print(f"  R1 recall_ioc: PASS ({r['latency_ms']}ms)")
+
+    r = mem.recall_playbook("T1059.001")
+    assert len(r["result"]) == 1, f"Expected 1 result, got {len(r['result'])}"
+    print(f"  R2 recall_playbook: PASS ({r['latency_ms']}ms)")
+
+    print("\n=== Testing Cross-Session Recall ===")
+    r = mem.recall_cross_session("INV-002")
+    assert len(r["result"]) == 1, f"Expected 1 result, got {len(r['result'])}"
+    print(f"  R4 recall_cross_session: PASS ({r['latency_ms']}ms)")
+
+    print("\n=== All Tests Passed ===")
+
+
+if __name__ == "__main__":
+    try:
+        test_memory()
+        sys.exit(0)
+    except AssertionError as e:
+        print(f"\nFAILED: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\nERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)

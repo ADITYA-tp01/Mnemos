@@ -24,6 +24,7 @@ class Memory:
         self.graph = db.select_graph(graph_name)
 
     def recall_ioc(self, ioc_value: str) -> dict[str, Any]:
+        """R1: Episodic recall - 'Have I seen this IoC before?'"""
         cypher = (
             "MATCH (ioc:IoC {value: $ioc})<-[:FOUND]-(inv:Investigation) "
             "-[:ATTRIBUTED_TO]->(actor:ThreatActor) "
@@ -37,6 +38,7 @@ class Memory:
                 "latency_ms": round(latency_ms, 2)}
 
     def recall_playbook(self, technique: str) -> dict[str, Any]:
+        """R2: Procedural recall - 'What playbook worked against this TTP?'"""
         cypher = (
             "MATCH (p:Playbook)-[:EFFECTIVE_AGAINST]->(t:TTP {mitre_id: $technique}) "
             "RETURN p.name, p.success_rate "
@@ -49,6 +51,7 @@ class Memory:
                 "latency_ms": round(latency_ms, 2)}
 
     def recall_asset_actor(self, asset_id: str) -> dict[str, Any]:
+        """R3: Multi-hop recall - 'Is this asset tied to a known actor?'"""
         cypher = (
             "MATCH path = (a:Asset {id: $asset})<-[:OBSERVED_ON]-(:IoC) "
             "-[:ASSOCIATED_WITH]-(actor:ThreatActor) "
@@ -61,6 +64,7 @@ class Memory:
                 "latency_ms": round(latency_ms, 2)}
 
     def recall_cross_session(self, current_inv_id: str) -> dict[str, Any]:
+        """R4: Cross-session recall - 'What have I learned from past sessions?'"""
         cypher = (
             "MATCH (past:Investigation)-[:FOUND]->(ioc:IoC) "
             "<-[:FOUND]-(now:Investigation {id: $current}) "
@@ -74,6 +78,7 @@ class Memory:
                 "latency_ms": round(latency_ms, 2)}
 
     def write_memory(self, ioc_value: str, ioc_type: str, actor_name: str) -> dict[str, Any]:
+        """R5: Memory write - persist a new finding."""
         cypher = (
             "MERGE (ioc:IoC {value: $value}) SET ioc.type = $type "
             "MERGE (actor:ThreatActor {name: $actor}) "
@@ -88,8 +93,12 @@ class Memory:
                 "latency_ms": round(latency_ms, 2)}
 
     def write_investigation(self, inv_id: str, alert_id: str,
-                            findings: list[str], conclusion: str
-                            ) -> dict[str, Any]:
+                            findings: list[str], conclusion: str,
+                            actor_name: str = None) -> dict[str, Any]:
+        """Create an Investigation node with optional actor attribution."""
+        start = time.perf_counter()
+
+        # Create Investigation and link to Alert
         cypher = (
             "CREATE (inv:Investigation { "
             "  id: $inv_id, alert_id: $alert_id, "
@@ -99,31 +108,68 @@ class Memory:
             "MATCH (al:Alert {id: $alert_id}) "
             "CREATE (inv)-[:TRIGGERED_BY]->(al)"
         )
-        start = time.perf_counter()
         result = self.graph.query(cypher,
                                   {"inv_id": inv_id, "alert_id": alert_id,
-                                   "findings": findings,
-                                   "conclusion": conclusion})
+                                   "findings": findings, "conclusion": conclusion})
+
+        # Link to IoCs found
+        for finding in findings:
+            self.graph.query(
+                "MATCH (ioc:IoC {value: $val}) "
+                "MATCH (inv:Investigation {id: $inv_id}) "
+                "CREATE (inv)-[:FOUND]->(ioc)",
+                {"val": finding, "inv_id": inv_id}
+            )
+        # Optionally link to ThreatActor (attribution)
+        if actor_name:
+            self.graph.query(
+                "MATCH (inv:Investigation {id: $inv_id}) "
+                "MATCH (a:ThreatActor {name: $actor}) "
+                "CREATE (inv)-[:ATTRIBUTED_TO]->(a)",
+                {"inv_id": inv_id, "actor": actor_name}
+            )
+
         latency_ms = (time.perf_counter() - start) * 1000
         return {"result": result.result_set, "cypher": cypher,
                 "latency_ms": round(latency_ms, 2)}
 
     def write_playbook_result(self, playbook_name: str,
-                              success: bool) -> dict[str, Any]:
+                              success: bool,
+                              ttps: list[str] = None) -> dict[str, Any]:
+        """Update a Playbook's success rate and optionally link to TTPs."""
         cypher = (
-            "MATCH (p:Playbook {name: $name}) "
-            "SET p.count = COALESCE(p.count, 0) + 1, "
-            "    p.successes = COALESCE(p.successes, 0) + $success"
+            "MERGE (p:Playbook {name: $name}) "
+            "ON CREATE SET p.count = 0, p.successes = 0, p.success_rate = 0.0 "
+            "WITH p "
+            "SET p.count = p.count + 1, "
+            "    p.successes = p.successes + $success "
+            "WITH p, CASE WHEN p.count > 0 "
+            "    THEN p.successes * 1.0 / p.count "
+            "    ELSE 1.0 END AS rate "
+            "SET p.success_rate = rate"
         )
         start = time.perf_counter()
         result = self.graph.query(cypher,
                                   {"name": playbook_name,
                                    "success": 1.0 if success else 0.0})
         latency_ms = (time.perf_counter() - start) * 1000
-        return {"result": result.result_set, "cypher": cypher,
-                "latency_ms": round(latency_ms, 2)}
+        ret = {"result": result.result_set, "cypher": cypher,
+               "latency_ms": round(latency_ms, 2)}
+
+        # Link to TTPs if provided
+        if ttps:
+            for ttp in ttps:
+                self.graph.query(
+                    "MATCH (p:Playbook {name: $name}) "
+                    "MATCH (t:TTP {mitre_id: $mitre_id}) "
+                    "MERGE (p)-[:EFFECTIVE_AGAINST]->(t)",
+                    {"name": playbook_name, "mitre_id": ttp}
+                )
+
+        return ret
 
     def get_stats(self) -> dict[str, int]:
+        """Return node counts by label and total edge count."""
         counts = {}
         for label in ["ThreatActor", "TTP", "IoC", "Asset", "Alert",
                       "Investigation", "Playbook", "Action"]:
@@ -134,6 +180,7 @@ class Memory:
         return counts
 
     def get_graph_data(self) -> dict[str, Any]:
+        """Return nodes and edges for Cytoscape.js visualization."""
         nodes = []
         r = self.graph.query(
             "MATCH (n) RETURN labels(n)[0] AS label, id(n) AS fid, n")

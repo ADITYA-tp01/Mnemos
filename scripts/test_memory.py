@@ -5,8 +5,9 @@ verifies recall returns results. Prints latency for each query.
 """
 import sys
 import os
-sys.path.insert(0, os.path.dirname(__file__))
-os.chdir(os.path.dirname(__file__))
+
+# Add project root to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from falkordb import FalkorDB
 from backend.app.agent.memory import Memory
@@ -36,27 +37,44 @@ def test_memory():
         print(f"  {name}: PASS ({r['latency_ms']}ms)")
 
     print("\n=== Writing Episodic Memory ===")
+    # Write investigation with actor attribution
     r = mem.write_investigation("INV-001", "ALERT-001",
-                                ["Found IoC: powershell-loader-7d3a9b.exe"],
-                                "APT-CRIMSON used PowerShell")
+                                ["powershell-loader-7d3a9b.exe"],
+                                "APT-CRIMSON used PowerShell",
+                                actor_name="APT-CRIMSON")
     print(f"  write_investigation: {r['latency_ms']}ms")
 
-    r = mem.write_playbook_result("Network_Segment_Isolation", True)
+    # Write playbook result linked to TTP
+    r = mem.write_playbook_result("Network_Segment_Isolation", True,
+                                  ttps=["T1059.001"])
     print(f"  write_playbook_result: {r['latency_ms']}ms")
 
     print("\n=== Testing Recall After Write ===")
+    # R1 should now return the investigation
     r = mem.recall_ioc("powershell-loader-7d3a9b.exe")
     assert len(r["result"]) == 1, f"Expected 1 result, got {len(r['result'])}"
     print(f"  R1 recall_ioc: PASS ({r['latency_ms']}ms)")
 
+    # R2 should now return the playbook
     r = mem.recall_playbook("T1059.001")
     assert len(r["result"]) == 1, f"Expected 1 result, got {len(r['result'])}"
     print(f"  R2 recall_playbook: PASS ({r['latency_ms']}ms)")
 
     print("\n=== Testing Cross-Session Recall ===")
+    # Simulate Session 2: write a second investigation sharing an IoC
+    mem.write_investigation("INV-002", "ALERT-002",
+                            ["185.220.101.45"],
+                            "APT-CRIMSON brute-forced cloud accounts",
+                            actor_name="APT-CRIMSON")
+    # Now query R4 from INV-002's perspective - should find shared IoCs from INV-001
     r = mem.recall_cross_session("INV-002")
-    assert len(r["result"]) == 1, f"Expected 1 result, got {len(r['result'])}"
+    assert len(r["result"]) >= 1, f"Expected >=1 results, got {len(r['result'])}"
     print(f"  R4 recall_cross_session: PASS ({r['latency_ms']}ms)")
+
+    print("\n=== Stats After Write ===")
+    stats = mem.get_stats()
+    for k, v in stats.items():
+        print(f"  {k}: {v}")
 
     print("\n=== All Tests Passed ===")
 

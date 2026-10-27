@@ -183,18 +183,18 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
     ```
   - `write_investigation(inv_id, alert_id, findings, conclusion)` → creates Investigation node + relationships
   - `write_playbook_result(playbook_name, success)` → updates `Playbook.success_rate`
-- [ ] Build the **recall-latency harness** — every recall function returns:
+- [x] Build the **recall-latency harness** — every recall function returns:
   ```python
   {"result": ..., "cypher": "the exact query", "latency_ms": 2.3}
   ```
-- [ ] Write test script (`scripts/test_memory.py`):
+- [x] Write test script (`scripts/test_memory.py`):
   - Seed → run each recall query → assert expected results
   - Run a write → run recall again → assert the new data appears
   - Print latency for each query
-- [ ] Test with empty episodic/procedural memory (recall returns empty gracefully)
-- [ ] Test after writing some episodic data (recall returns real results)
+- [x] Test with empty episodic/procedural memory (recall returns empty gracefully)
+- [x] Test after writing some episodic data (recall returns real results)
 - [ ] Scan whole project — check if every task is done properly without bugs and failures
-- [ ] End-of-day upload: commit + push **Day 2** to GitHub
+- [x] End-of-day upload: commit + push **Day 2** to GitHub
 
 ### ✅ Success Criteria
 - [x] All 5 queries (R1–R5) execute correctly from CLI against seeded data

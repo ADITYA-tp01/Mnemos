@@ -1,0 +1,1 @@
+$env:CLAUDE_CONFIG_DIR="$HOME\.claude\profiles\freellmapi"; Remove-Item Env:ANTHROPIC_BASE_URL -ErrorAction SilentlyContinue; claude --resume 7a14c02b-d9d1-4de5-b453-8dd67e0b1af8

@@ -252,7 +252,11 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
 - [x] Test the full loop end-to-end from CLI or curl:
   - Trigger Alert #1 → agent recalls (empty), investigates, writes memory
   - Check FalkorDB — new episodic + procedural nodes exist
-- [ ] Scan whole project — check if every task is done properly without bugs and failures
+- [x] Scan whole project — check if every task is done properly without bugs and failures
+  - All agent loop tests pass (perceive→recall→reason→act→write)
+  - Fallback mode works without LLM key
+  - Transcript captures all steps with latency
+  - API routes functional
 - [x] End-of-day upload: commit + push **Day 3** to GitHub
 
 ### ✅ Success Criteria

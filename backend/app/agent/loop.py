@@ -69,7 +69,10 @@ class AgentLoop:
     def __init__(self, memory: Memory, tool_router: ToolRouter):
         self.memory = memory
         self.tools = tool_router
-        self.client = OpenAI(api_key=os.environ.get("LLM_API_KEY", ""))
+        self.llm_provider = os.environ.get("LLM_PROVIDER", "ollama").lower()
+        self.ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+        self.llm_model = os.environ.get("LLM_MODEL", "qwen3:8b")
+        self.llm_enabled = True  # Always enabled with Ollama
         self.session_id = f"session-{random.randint(1000, 9999)}"
         self.session_start = datetime.utcnow().isoformat() + "Z"
         self.transcript: List[TranscriptEntry] = []
@@ -129,6 +132,25 @@ class AgentLoop:
 
     def reason(self, alert: Dict[str, Any], recall_context: Dict[str, Any]) -> List[Dict]:
         """Step 3: Single LLM call with recalled context + available tools."""
+        if not self.llm_enabled:
+            # Fallback: return a deterministic tool call sequence for demo
+            self._add_transcript("reason", {
+                "mode": "fallback_no_llm",
+                "content": "LLM not configured - using deterministic fallback",
+                "tool_calls": [
+                    {"name": "analyze_ioc", "arguments": {"ioc_value": alert.get("iocs", [""])[0]}},
+                    {"name": "recall_ioc", "arguments": {"ioc_value": alert.get("iocs", [""])[0]}},
+                    {"name": "recall_playbook", "arguments": {"technique": "T1059.001"}},
+                ],
+            })
+            return [
+                type("TC", (), {"function": type("F", (), {"name": "analyze_ioc", "arguments": json.dumps({"ioc_value": alert.get("iocs", [""])[0]})})})(),
+                type("TC", (), {"function": type("F", (), {"name": "recall_ioc", "arguments": json.dumps({"ioc_value": alert.get("iocs", [""])[0]})})})(),
+                type("TC", (), {"function": type("F", (), {"name": "recall_playbook", "arguments": json.dumps({"technique": "T1059.001"})})})(),
+            ]
+
+        import requests
+
         # Serialize recall context for LLM
         context_summary = []
         for key, result in recall_context.items():
@@ -147,28 +169,77 @@ class AgentLoop:
 
         tools = self.tools.get_tools_schema()
 
-        try:
-            response = self.client.chat.completions.create(
-                model=os.environ.get("LLM_MODEL", "gpt-4o-mini"),
-                messages=messages,
-                tools=tools,
-                tool_choice="auto",
-                timeout=30,
-            )
-            choice = response.choices[0]
-            self._add_transcript("reason", {
-                "model": os.environ.get("LLM_MODEL", "gpt-4o-mini"),
-                "content": choice.message.content,
-                "tool_calls": [
-                    {
-                        "name": tc.function.name,
-                        "arguments": json.loads(tc.function.arguments)
+        # Convert OpenAI tool format to Ollama format
+        ollama_tools = []
+        for t in tools:
+            if t["type"] == "function":
+                f = t["function"]
+                ollama_tools.append({
+                    "type": "function",
+                    "function": {
+                        "name": f["name"],
+                        "description": f["description"],
+                        "parameters": f["parameters"]
                     }
-                    for tc in choice.message.tool_calls or []
-                ],
-                "latency_ms": response.usage.total_tokens if response.usage else 0,
-            })
-            return choice.message.tool_calls or []
+                })
+
+        try:
+            if self.llm_provider == "ollama":
+                import requests
+                url = f"{self.ollama_host}/api/chat"
+                payload = {
+                    "model": self.llm_model,
+                    "messages": messages,
+                    "tools": ollama_tools,
+                    "stream": False,
+                }
+                response = requests.post(url, json=payload, timeout=60)
+                response.raise_for_status()
+                data = response.json()
+
+                tool_calls = []
+                if "message" in data and "tool_calls" in data["message"]:
+                    for tc in data["message"]["tool_calls"]:
+                        tool_calls.append(type("TC", (), {
+                            "function": type("F", (), {
+                                "name": tc["function"]["name"],
+                                "arguments": json.dumps(tc["function"]["arguments"])
+                            })()
+                        })())
+
+                self._add_transcript("reason", {
+                    "model": self.llm_model,
+                    "provider": "ollama",
+                    "content": data.get("message", {}).get("content", ""),
+                    "tool_calls": [
+                        {"name": tc["function"]["name"], "arguments": tc["function"]["arguments"]}
+                        for tc in data.get("message", {}).get("tool_calls", [])
+                    ],
+                })
+                return tool_calls
+            else:
+                # OpenAI path
+                response = self.client.chat.completions.create(
+                    model=os.environ.get("LLM_MODEL", "gpt-4o-mini"),
+                    messages=messages,
+                    tools=tools,
+                    tool_choice="auto",
+                    timeout=30,
+                )
+                choice = response.choices[0]
+                self._add_transcript("reason", {
+                    "model": os.environ.get("LLM_MODEL", "gpt-4o-mini"),
+                    "content": choice.message.content,
+                    "tool_calls": [
+                        {
+                            "name": tc.function.name,
+                            "arguments": json.loads(tc.function.arguments)
+                        }
+                        for tc in choice.message.tool_calls or []
+                    ],
+                    "latency_ms": response.usage.total_tokens if response.usage else 0,
+                })
+                return choice.message.tool_calls or []
         except Exception as e:
             self._add_transcript("reason_error", {"error": str(e)})
             return []

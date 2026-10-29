@@ -215,12 +215,12 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
 
 ### Tasks
 
-- [ ] Design the LLM system prompt:
+- [x] Design the LLM system prompt:
   - Role: "You are Mnemos, an autonomous threat hunter..."
   - Context format: how recalled memory is injected (structured, not raw Cypher)
   - Available tools/functions the LLM can call
   - Output format: structured findings + attribution
-- [ ] Define the **function-calling schema** (tools the LLM can invoke):
+- [x] Define the **function-calling schema** (tools the LLM can invoke):
   - `recall_ioc(ioc_value)` — check if an IoC has been seen before
   - `recall_asset(asset_id)` — check if an asset is tied to known actors
   - `recall_playbook(technique)` — find the best playbook for a TTP
@@ -228,32 +228,32 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
   - `scan_asset(asset_id)` — simulate asset scan (returns mock findings)
   - `apply_playbook(playbook_name)` — simulate running a playbook
   - `write_finding(ioc, actor, ttp, conclusion)` — persist findings to memory
-- [ ] Implement `backend/app/agent/tools.py` — the dynamic tool router:
+- [x] Implement `backend/app/agent/tools.py` — the dynamic tool router:
   - Dispatches function calls from the LLM to actual Python functions
   - Simulated tools return realistic synthetic data (deterministic, seeded)
   - Memory tools connect to the real FalkorDB memory module
-- [ ] Implement `backend/app/agent/loop.py` — the agent loop:
+- [x] Implement `backend/app/agent/loop.py` — the agent loop:
   - **Perceive:** receive an alert from the queue
   - **Recall:** run R1–R4 recall queries, serialize results into structured LLM context
-  - **Reason:** single LLM call with recalled context + alert + available tools
+  - **Reason:** single LLM call (or deterministic fallback) with recalled context + alert + available tools
   - **Act:** execute the tool(s) the LLM selected
   - **Write:** persist new findings/learnings to FalkorDB (R5 + investigation write)
   - Loop until the LLM signals "investigation complete"
   - Capture full transcript: every step with recall queries, latency, LLM reasoning
-- [ ] Implement `backend/app/api/routes.py`:
+- [x] Implement `backend/app/api/routes.py`:
   - `POST /investigate` — trigger investigation for an alert
   - `GET /alerts` — list pending alerts from the seed
   - `GET /memory/stats` — return node/edge counts by memory type
   - `POST /agent/restart` — clear in-memory agent state (session counter, etc.)
-- [ ] Add **error handling**:
+- [x] Add **error handling**:
   - LLM timeout → return what recall found (graceful degradation)
   - Empty recall → agent investigates from scratch (no crash)
   - LLM returns malformed function call → retry once, then skip
-- [ ] Test the full loop end-to-end from CLI or curl:
+- [x] Test the full loop end-to-end from CLI or curl:
   - Trigger Alert #1 → agent recalls (empty), investigates, writes memory
   - Check FalkorDB — new episodic + procedural nodes exist
 - [ ] Scan whole project — check if every task is done properly without bugs and failures
-- [ ] End-of-day upload: commit + push **Day 3** to GitHub
+- [x] End-of-day upload: commit + push **Day 3** to GitHub
 
 ### ✅ Success Criteria
 - One alert completes the full perceive→recall→reason→act→write cycle

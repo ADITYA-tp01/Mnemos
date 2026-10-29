@@ -260,10 +260,10 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
 - [x] End-of-day upload: commit + push **Day 3** to GitHub
 
 ### ✅ Success Criteria
-- One alert completes the full perceive→recall→reason→act→write cycle
-- Memory graph grows (new nodes/edges visible in FalkorDB Browser)
-- Transcript captures every step including recall queries + latency
-- Agent handles empty recall gracefully (first-ever investigation)
+- [x] One alert completes the full perceive→recall→reason→act→write cycle
+- [x] Memory graph grows (new nodes/edges visible in FalkorDB Browser)
+- [x] Transcript captures every step including recall queries + latency
+- [x] Agent handles empty recall gracefully (first-ever investigation)
 
 ---
 

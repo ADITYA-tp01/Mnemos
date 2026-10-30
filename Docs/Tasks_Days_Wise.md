@@ -273,7 +273,7 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
 
 ### Tasks
 
-- [ ] Implement the **"Restart Agent"** flow:
+- [x] Implement the **"Restart Agent"** flow:
   - `POST /agent/restart` clears:
     - In-memory session state (session counter, current context, transcript buffer)
     - Any cached LLM conversation history
@@ -282,22 +282,22 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
     - Seeded data
     - Any persisted investigations/findings
   - Returns new session ID + confirmation
-- [ ] Build the **Session 1 → Restart → Session 2** test:
+- [x] Build the **Session 1 → Restart → Session 2** test:
   - **Session 1:** Trigger Alert #1 → agent has empty recall → investigates from scratch → attributes to APT-CRIMSON → writes memory
   - **Restart:** Call `/agent/restart` → in-memory state cleared
   - **Session 2:** Trigger Alert #2 (related IoCs) → agent **recalls** APT-CRIMSON, prior TTPs, prior playbook → responds faster, skips re-discovery
   - Verify: Session 2 transcript shows "Recalled from memory" with actual data
   - Verify: Session 2 recall latency is sub-millisecond
-- [ ] Add **session indicator** to API responses:
+- [x] Add **session indicator** to API responses:
   - `session_id`, `session_start`, `is_fresh_session` flag
   - Previous session count
-- [ ] Test the cross-session recall query R4 specifically:
+- [x] Test the cross-session recall query R4 specifically:
   - After Session 1 writes, Session 2's R4 should return shared IoCs + actor
-- [ ] Script the **demo critical path** (pre-scripted fallback):
+- [x] Script the **demo critical path** (pre-scripted fallback):
   - If LLM is unreliable live, cache the exact function-call sequence for Alert #1 and #2
   - Fallback mode replays cached calls but still runs real Cypher against real FalkorDB
-- [ ] Run the full Session 1 → Restart → Session 2 flow **3 times** — must be rock-solid
-- [ ] Scan whole project — check if every task is done properly without bugs and failures
+- [x] Run the full Session 1 → Restart → Session 2 flow **3 times** — must be rock-solid
+- [x] Scan whole project — check if every task is done properly without bugs and failures
 - [ ] End-of-day upload: commit + push **Day 4** to GitHub
 
 ### ✅ Success Criteria

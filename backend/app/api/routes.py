@@ -99,6 +99,9 @@ async def investigate(alert_id: str) -> Dict[str, Any]:
     return {
         "investigation_id": result["investigation_id"],
         "session_id": result["session_id"],
+        "session_start": agent_loop.session_start,
+        "is_fresh_session": agent_loop.session_count == 0,
+        "previous_session_count": agent_loop.session_count,
         "transcript": result["transcript"],
         "success": True,
     }

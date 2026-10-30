@@ -63,16 +63,22 @@ class Memory:
         return {"result": result.result_set, "cypher": cypher,
                 "latency_ms": round(latency_ms, 2)}
 
-    def recall_cross_session(self, current_inv_id: str) -> dict[str, Any]:
-        """R4: Cross-session recall - 'What have I learned from past sessions?'"""
+    def recall_cross_session(self, alert_id: str, current_inv_id: str = None) -> dict[str, Any]:
+        """R4: Cross-session recall - 'What have I learned from past sessions?'
+
+        Finds prior investigations that share IoCs with the current alert
+        via SHARED_IOC edges, returning the attributed actor and shared IoCs.
+        """
         cypher = (
             "MATCH (past:Investigation)-[:FOUND]->(ioc:IoC) "
-            "<-[:FOUND]-(now:Investigation {id: $current}) "
+            "MATCH (al:Alert {id: $alert_id})-[:SHARED_IOC]->(ioc) "
+            "WHERE past.id <> $current_inv "
             "MATCH (past)-[:ATTRIBUTED_TO]->(actor) "
             "RETURN actor.name, count(past), collect(DISTINCT ioc.value)"
         )
         start = time.perf_counter()
-        result = self.graph.query(cypher, {"current": current_inv_id})
+        result = self.graph.query(cypher, {"alert_id": alert_id,
+                                           "current_inv": current_inv_id or ""})
         latency_ms = (time.perf_counter() - start) * 1000
         return {"result": result.result_set, "cypher": cypher,
                 "latency_ms": round(latency_ms, 2)}

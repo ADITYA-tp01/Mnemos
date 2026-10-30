@@ -27,7 +27,7 @@ def test_memory():
         ("R1: recall_ioc", lambda: mem.recall_ioc("powershell-loader-7d3a9b.exe")),
         ("R2: recall_playbook", lambda: mem.recall_playbook("T1059.001")),
         ("R3: recall_asset_actor", lambda: mem.recall_asset_actor("ASSET-001")),
-        ("R4: recall_cross_session", lambda: mem.recall_cross_session("INV-001")),
+        ("R4: recall_cross_session", lambda: mem.recall_cross_session("ALERT-001")),
     ]
 
     for name, fn in tests:
@@ -61,13 +61,13 @@ def test_memory():
     print(f"  R2 recall_playbook: PASS ({r['latency_ms']}ms)")
 
     print("\n=== Testing Cross-Session Recall ===")
-    # Simulate Session 2: write a second investigation sharing an IoC
+    # Simulate Session 2: write a second investigation sharing an IoC with INV-001
     mem.write_investigation("INV-002", "ALERT-002",
-                            ["185.220.101.45"],
+                            ["powershell-loader-7d3a9b.exe"],
                             "APT-CRIMSON brute-forced cloud accounts",
                             actor_name="APT-CRIMSON")
     # Now query R4 from INV-002's perspective - should find shared IoCs from INV-001
-    r = mem.recall_cross_session("INV-002")
+    r = mem.recall_cross_session("ALERT-002", "INV-002")
     assert len(r["result"]) >= 1, f"Expected >=1 results, got {len(r['result'])}"
     print(f"  R4 recall_cross_session: PASS ({r['latency_ms']}ms)")
 

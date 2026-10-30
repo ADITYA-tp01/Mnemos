@@ -75,17 +75,11 @@ class ToolRouter:
         self._tools["scan_asset"] = simulate_asset_scan
         self._tools["apply_playbook"] = simulate_playbook_application
 
-    def _write_finding(self, ioc: str, actor: str, ttp: str, conclusion: str) -> Dict[str, Any]:
-        """Write a finding to memory (R5 + investigation write)."""
-        self.memory.write_memory(ioc, "finding", actor)
-        self.memory.write_investigation(
-            inv_id=f"INV-{int(random.random()*10000):04d}",
-            alert_id="ALERT-001",
-            findings=[ioc],
-            conclusion=conclusion,
-            actor_name=actor
-        )
-        return {"status": "written", "actor": actor, "ttp": ttp}
+    def _write_finding(self, ioc: str, actor: str, ttp: str, conclusion: str,
+                   alert_id: str = "ALERT-001", inv_id: str = None) -> Dict[str, Any]:
+        """Record a finding for persistence by the agent loop's write step."""
+        return {"status": "recorded", "actor": actor, "ttp": ttp,
+                "alert_id": alert_id, "inv_id": inv_id}
 
     def get_tools_schema(self) -> List[Dict[str, Any]]:
         """Return OpenAI-compatible tool schema for LLM function calling."""
@@ -199,7 +193,9 @@ class ToolRouter:
                             "ioc": {"type": "string", "description": "IoC value"},
                             "actor": {"type": "string", "description": "Attributed actor"},
                             "ttp": {"type": "string", "description": "MITRE TTP"},
-                            "conclusion": {"type": "string", "description": "Investigation conclusion"}
+                            "conclusion": {"type": "string", "description": "Investigation conclusion"},
+                            "alert_id": {"type": "string", "description": "Alert being investigated"},
+                            "inv_id": {"type": "string", "description": "Investigation ID"}
                         },
                         "required": ["ioc", "actor", "ttp", "conclusion"]
                     }

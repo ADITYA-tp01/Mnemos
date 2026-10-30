@@ -301,10 +301,10 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
 - [x] End-of-day upload: commit + push **Day 4** to GitHub
 
 ### ✅ Success Criteria
-- Session 1 → Restart → Session 2 works cleanly
-- Session 2 recall shows prior investigation data with sub-ms latency
-- Session 2 agent visibly "gets smarter" (skips rediscovery, references prior findings)
-- The flow repeats reliably 3× in a row without issues
+- [x] Session 1 → Restart → Session 2 works cleanly
+- [x] Session 2 recall shows prior investigation data with sub-ms latency
+- [x] Session 2 agent visibly "gets smarter" (skips rediscovery, references prior findings)
+- [x] The flow repeats reliably 3× in a row without issues
 
 ---
 

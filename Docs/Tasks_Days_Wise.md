@@ -298,7 +298,7 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
   - Fallback mode replays cached calls but still runs real Cypher against real FalkorDB
 - [x] Run the full Session 1 → Restart → Session 2 flow **3 times** — must be rock-solid
 - [x] Scan whole project — check if every task is done properly without bugs and failures
-- [ ] End-of-day upload: commit + push **Day 4** to GitHub
+- [x] End-of-day upload: commit + push **Day 4** to GitHub
 
 ### ✅ Success Criteria
 - Session 1 → Restart → Session 2 works cleanly

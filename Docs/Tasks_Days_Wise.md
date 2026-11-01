@@ -314,59 +314,59 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
 
 ### Tasks
 
-- [ ] Initialize Next.js app in `web/` (App Router, TypeScript, Tailwind, shadcn/ui)
-- [ ] Create `web/Dockerfile` for the frontend
-- [ ] Update `docker-compose.yml` to include the `web` service
-- [ ] Build the **Console Layout** (`app/page.tsx`):
+- [x] Initialize Next.js app in `web/` (App Router, TypeScript, Tailwind, shadcn/ui)
+- [x] Create `web/Dockerfile` for the frontend
+- [x] Update `docker-compose.yml` to include the `web` service
+- [x] Build the **Console Layout** (`app/page.tsx`):
   - Dark "SOC ops center" aesthetic (dark background, monospace accents)
   - Header: Mnemos logo/name + session indicator (Session #, fresh/resumed)
   - 4-panel layout: Alert Feed | Transcript | Memory Graph | Recall Inspector
-- [ ] Build **Alert Feed Panel** (`components/AlertFeed.tsx`):
+- [x] Build **Alert Feed Panel** (`components/AlertFeed.tsx`):
   - Lists alerts from `GET /alerts`
   - Click an alert → triggers `POST /investigate`
   - Shows alert severity, type, timestamp
   - Visual indicator for "investigating" / "completed"
-- [ ] Build **Transcript Panel** (`components/Transcript.tsx`):
+- [x] Build **Transcript Panel** (`components/Transcript.tsx`):
   - Shows the agent's perceive→recall→reason→act→write trace
   - Each step is collapsible
   - **Recall latency badge** on every memory lookup (e.g., `recalled 4 facts in 2ms`)
   - Color-coded by step type (recall = blue, reason = purple, act = green, write = orange)
-- [ ] Build **Memory Graph Panel** (`components/MemoryGraph.tsx`):
-  - Uses `react-cytoscapejs` to render the agent's memory
+- [x] Build **Memory Graph Panel** (`components/MemoryGraph.tsx`):
+  - Uses `cytoscape` to render the agent's memory
   - Nodes color-coded by memory type:
     - 🔵 Semantic (actors, TTPs, IoCs, assets)
     - 🟢 Episodic (investigations, alerts, findings)
     - 🟣 Procedural (playbooks, actions)
   - Graph **grows live** as the agent writes new memory
   - Fetch graph data from `GET /memory/graph` endpoint
-- [ ] Build **Recall Inspector Panel** (`components/RecallInspector.tsx`):
+- [x] Build **Recall Inspector Panel** (`components/RecallInspector.tsx`):
   - Shows the exact Cypher query for each recall
   - Shows the result returned
   - Shows latency
   - Monospace font, syntax-highlighted Cypher
-- [ ] Add **"Restart Agent" button** in the header:
+- [x] Add **"Restart Agent" button** in the header:
   - Calls `POST /agent/restart`
   - Visually clears transcript + resets session indicator
   - Memory graph stays intact (this is the persistence moment)
   - Shows a toast/banner: "Agent restarted — memory preserved"
-- [ ] Build **Memory Stats bar**:
+- [x] Build **Memory Stats bar**:
   - Node counts by type (semantic / episodic / procedural)
   - "Memory grew by N nodes" counter after each investigation
   - Total edges count
-- [ ] Add the backend API endpoints needed by the UI:
+- [x] Add the backend API endpoints needed by the UI:
   - `GET /memory/graph` — returns nodes + edges for Cytoscape rendering
   - `GET /investigate/{id}/transcript` — returns the step-by-step transcript
   - WebSocket or SSE for live transcript streaming (stretch — polling fallback is fine)
-- [ ] Scan whole project — check if every task is done properly without bugs and failures
+- [x] Scan whole project — check if every task is done properly without bugs and failures
 - [ ] End-of-day upload: commit + push **Day 5** to GitHub
 
 ### ✅ Success Criteria
-- `docker compose up` brings up FalkorDB + backend + UI
-- Console loads with dark SOC aesthetic
-- Clicking an alert triggers investigation, transcript streams in
-- Memory graph renders and grows as the agent writes
-- Recall Inspector shows real Cypher + latency
-- "Restart Agent" clears session but keeps graph visible
+- [x] `docker compose up` brings up FalkorDB + backend + UI
+- [x] Console loads with dark SOC aesthetic
+- [x] Clicking an alert triggers investigation, transcript streams in
+- [x] Memory graph renders and grows as the agent writes
+- [x] Recall Inspector shows real Cypher + latency
+- [x] "Restart Agent" clears session but keeps graph visible
 
 ---
 

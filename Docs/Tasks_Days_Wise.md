@@ -358,7 +358,7 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
   - `GET /investigate/{id}/transcript` — returns the step-by-step transcript
   - WebSocket or SSE for live transcript streaming (stretch — polling fallback is fine)
 - [x] Scan whole project — check if every task is done properly without bugs and failures
-- [ ] End-of-day upload: commit + push **Day 5** to GitHub
+- [x] End-of-day upload: commit + push **Day 5** to GitHub
 
 ### ✅ Success Criteria
 - [x] `docker compose up` brings up FalkorDB + backend + UI

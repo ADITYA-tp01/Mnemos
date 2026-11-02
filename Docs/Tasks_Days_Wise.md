@@ -427,7 +427,7 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
   - Restart → recall moment is clear
   - No errors or awkward pauses
 - [x] Scan whole project — check if every task is done properly without bugs and failures
-- [ ] End-of-day upload: commit + push **Day 6** to GitHub
+- [x] End-of-day upload: commit + push **Day 6** to GitHub
 
 ### ✅ Success Criteria
 - [x] Demo video lands clean 3 times in a row before recording the final take

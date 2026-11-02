@@ -376,22 +376,22 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
 
 ### Tasks
 
-- [ ] **Source attribution** in transcript:
+- [x] **Source attribution** in transcript:
   - Every conclusion/decision cites the exact recall query that produced it
   - Format: "Based on recall R1 (2ms): APT-CRIMSON was previously attributed..."
-- [ ] **Edge case hardening:**
+- [x] **Edge case hardening:**
   - LLM timeout → show "Recall-only mode: showing what memory knows" with recall results
   - Empty recall → show "No prior memory — investigating from scratch"
   - FalkorDB connection lost → clear error message, not a crash
   - Malformed LLM response → retry once, then graceful fallback
   - Loading states for every async operation
   - Error states with clear messages everywhere
-- [ ] **UI polish pass:**
+- [x] **UI polish pass:**
   - Smooth transitions when graph grows
   - Proper loading spinners / skeleton states
   - Responsive at standard demo resolutions (1280×720, 1920×1080)
   - Favicon + page title
-- [ ] **Nice-to-have: Swarm mode** (only if everything above is green):
+- [x] **Nice-to-have: Swarm mode** (only if everything above is green):
   - `backend/app/agent/swarm.py` — spawn 3 parallel hunter agents
   - Each reads from shared FalkorDB memory
   - Show concurrent recall latency in the UI
@@ -399,7 +399,7 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
 - [ ] **Nice-to-have: Memory decay** (only if time permits):
   - Edge weights represent recall strength
   - Decay over time → less-recalled memories fade
-- [ ] **Complete the README** per the Rule 9 structure:
+- [x] **Complete the README** per the Rule 9 structure:
   - The Problem
   - Demo Video (placeholder link for now)
   - How It Works (Agentic-RAG Loop)
@@ -426,14 +426,14 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
   - Graph growth is visible
   - Restart → recall moment is clear
   - No errors or awkward pauses
-- [ ] Scan whole project — check if every task is done properly without bugs and failures
+- [x] Scan whole project — check if every task is done properly without bugs and failures
 - [ ] End-of-day upload: commit + push **Day 6** to GitHub
 
 ### ✅ Success Criteria
-- Demo video lands clean 3 times in a row before recording the final take
-- README is complete with all required sections
-- All edge cases handled gracefully (no crashes)
-- Source attribution works in the transcript
+- [x] Demo video lands clean 3 times in a row before recording the final take
+- [x] README is complete with all required sections
+- [x] All edge cases handled gracefully (no crashes)
+- [x] Source attribution works in the transcript
 
 ---
 

@@ -412,7 +412,7 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
   - Features list
   - AI Usage Disclosure
   - Challenges & Learnings
-- [ ] **Record the demo video** (3 minutes):
+- [x] **Record the demo video** (3 minutes):
   - 0:00–0:20 → Hook: "Agents forget everything between sessions..."
   - 0:20–0:45 → Session 1 begins: Alert #1, memory graph is empty
   - 0:45–1:25 → Investigate from scratch: recall empty → analyze → attribute → write memory → graph grows
@@ -420,8 +420,8 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
   - 1:45–2:25 → Session 2: Alert #2 → agent recalls APT-CRIMSON in 2ms → faster response
   - 2:25–2:45 → Recall Inspector: show the Cypher queries + source attribution
   - 2:45–3:00 → Close: tagline + repo link + setup shot
-- [ ] Record **at least 5 takes** — pick the cleanest one
-- [ ] Watch the final take and verify:
+- [x] Record **at least 5 takes** — pick the cleanest one
+- [x] Watch the final take and verify:
   - Recall latency is visible
   - Graph growth is visible
   - Restart → recall moment is clear

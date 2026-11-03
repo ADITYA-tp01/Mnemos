@@ -1,17 +1,11 @@
 """Mnemos — Memory Reader/Writer module.
 
 Implements the five Cypher queries (R1-R5) that form the agent's
-cognitive memory layer on FalkorDB.
-
-All recall functions return a dict with:
-  {
-    "result": <query_results>,
-    "cypher": "<the exact query>",
-    "latency_ms": <float>,
-  }
+cognitive memory layer on FalkorDB. All queries now include edge
+weights for memory decay and reinforcement.
 """
 import time
-from typing import Any
+from typing import Any, Dict, List
 
 from falkordb import FalkorDB
 
@@ -22,14 +16,17 @@ class Memory:
     def __init__(self, db: FalkorDB, graph_name: str = "mnemos"):
         self.db = db
         self.graph = db.select_graph(graph_name)
+        self.decay_rate = 0.9
 
     def recall_ioc(self, ioc_value: str) -> dict[str, Any]:
         """R1: Episodic recall - 'Have I seen this IoC before?'"""
         cypher = (
-            "MATCH (ioc:IoC {value: $ioc})<-[:FOUND]-(inv:Investigation) "
+            "MATCH (ioc:IoC {value: $ioc})<-[r:FOUND]-"
+            "(inv:Investigation) "
             "-[:ATTRIBUTED_TO]->(actor:ThreatActor) "
             "OPTIONAL MATCH (actor)-[:USES]->(ttp:TTP) "
-            "RETURN actor.name, collect(DISTINCT ttp.mitre_id), inv.conclusion"
+            "RETURN actor.name, collect(DISTINCT ttp.mitre_id), "
+            "inv.conclusion, r.weight"
         )
         start = time.perf_counter()
         result = self.graph.query(cypher, {"ioc": ioc_value})
@@ -40,8 +37,9 @@ class Memory:
     def recall_playbook(self, technique: str) -> dict[str, Any]:
         """R2: Procedural recall - 'What playbook worked against this TTP?'"""
         cypher = (
-            "MATCH (p:Playbook)-[:EFFECTIVE_AGAINST]->(t:TTP {mitre_id: $technique}) "
-            "RETURN p.name, p.success_rate "
+            "MATCH (p:Playbook)-[r:EFFECTIVE_AGAINST]->"
+            "(t:TTP {mitre_id: $technique}) "
+            "RETURN p.name, p.success_rate, r.weight "
             "ORDER BY p.success_rate DESC LIMIT 1"
         )
         start = time.perf_counter()
@@ -53,8 +51,8 @@ class Memory:
     def recall_asset_actor(self, asset_id: str) -> dict[str, Any]:
         """R3: Multi-hop recall - 'Is this asset tied to a known actor?'"""
         cypher = (
-            "MATCH path = (a:Asset {id: $asset})<-[:OBSERVED_ON]-(:IoC) "
-            "-[:ASSOCIATED_WITH]-(actor:ThreatActor) "
+            "MATCH path = (a:Asset {id: $asset})<-[:OBSERVED_ON]-"
+            "(:IoC)-[:ASSOCIATED_WITH]->(actor:ThreatActor) "
             "RETURN path"
         )
         start = time.perf_counter()
@@ -64,11 +62,7 @@ class Memory:
                 "latency_ms": round(latency_ms, 2)}
 
     def recall_cross_session(self, alert_id: str, current_inv_id: str = None) -> dict[str, Any]:
-        """R4: Cross-session recall - 'What have I learned from past sessions?'
-
-        Finds prior investigations that share IoCs with the current alert
-        via SHARED_IOC edges, returning the attributed actor and shared IoCs.
-        """
+        """R4: Cross-session recall - 'What have I learned from past sessions?'"""
         cypher = (
             "MATCH (past:Investigation)-[:FOUND]->(ioc:IoC) "
             "MATCH (al:Alert {id: $alert_id})-[:SHARED_IOC]->(ioc) "
@@ -88,7 +82,7 @@ class Memory:
         cypher = (
             "MERGE (ioc:IoC {value: $value}) SET ioc.type = $type "
             "MERGE (actor:ThreatActor {name: $actor}) "
-            "MERGE (actor)-[:ASSOCIATED_WITH]->(ioc)"
+            "MERGE (actor)-[:ASSOCIATED_WITH {weight: 1.0, last_recalled: 0}]->(ioc)"
         )
         start = time.perf_counter()
         result = self.graph.query(cypher,
@@ -104,7 +98,6 @@ class Memory:
         """Create an Investigation node with optional actor attribution."""
         start = time.perf_counter()
 
-        # Create Investigation and link to Alert
         cypher = (
             "CREATE (inv:Investigation { "
             "  id: $inv_id, alert_id: $alert_id, "
@@ -118,15 +111,13 @@ class Memory:
                                   {"inv_id": inv_id, "alert_id": alert_id,
                                    "findings": findings, "conclusion": conclusion})
 
-        # Link to IoCs found
         for finding in findings:
             self.graph.query(
                 "MATCH (ioc:IoC {value: $val}) "
                 "MATCH (inv:Investigation {id: $inv_id}) "
-                "CREATE (inv)-[:FOUND]->(ioc)",
+                "CREATE (inv)-[:FOUND {weight: 1.0, last_recalled: 0}]->(ioc)",
                 {"val": finding, "inv_id": inv_id}
             )
-        # Optionally link to ThreatActor (attribution)
         if actor_name:
             self.graph.query(
                 "MATCH (inv:Investigation {id: $inv_id}) "
@@ -162,17 +153,68 @@ class Memory:
         ret = {"result": result.result_set, "cypher": cypher,
                "latency_ms": round(latency_ms, 2)}
 
-        # Link to TTPs if provided
         if ttps:
             for ttp in ttps:
                 self.graph.query(
                     "MATCH (p:Playbook {name: $name}) "
                     "MATCH (t:TTP {mitre_id: $mitre_id}) "
-                    "MERGE (p)-[:EFFECTIVE_AGAINST]->(t)",
+                    "MERGE (p)-[:EFFECTIVE_AGAINST {weight: 1.0}]->(t)",
                     {"name": playbook_name, "mitre_id": ttp}
                 )
 
         return ret
+
+    def decay_memory(self) -> Dict[str, Any]:
+        """Reduce edge weights over time to simulate memory decay.
+
+        Returns count of edges decayed and pruned.
+        """
+        # Count edges with weight > 0 before decaying (SET returns no rows)
+        before = self.graph.query(
+            "MATCH ()-[r]->() WHERE r.weight > 0 RETURN count(r)"
+        )
+        decayed_edges = before.result_set[0][0] if before.result_set else 0
+
+        decay_cypher = (
+            "MATCH ()-[r]->() WHERE r.weight > 0 "
+            "SET r.weight = r.weight * $rate, r.last_decayed = timestamp()"
+        )
+        self.graph.query(decay_cypher, {"rate": self.decay_rate})
+
+        prune_cypher = (
+            "MATCH ()-[r]->() WHERE r.weight < 0.1 "
+            "DELETE r"
+        )
+        prune_result = self.graph.query(prune_cypher)
+        pruned_edges = prune_result.result_set[0][0] if prune_result.result_set else 0
+
+        return {"edges_decayed": decayed_edges, "edges_pruned": pruned_edges}
+
+    def boost_recall(self, edge_type: str = None) -> int:
+        """Boost edge weights when a recall query traverses them."""
+        if edge_type == "all":
+            cypher = (
+                "MATCH ()-[r]->() WHERE r.weight > 0 "
+                "SET r.weight = CASE WHEN r.weight * 1.2 > 5.0 "
+                "THEN 5.0 ELSE r.weight * 1.2 END"
+            )
+        elif edge_type == "found":
+            cypher = (
+                "MATCH ()-[r:FOUND]->() WHERE r.weight > 0 "
+                "SET r.weight = CASE WHEN r.weight * 1.2 > 5.0 "
+                "THEN 5.0 ELSE r.weight * 1.2 END"
+            )
+        elif edge_type == "associated":
+            cypher = (
+                "MATCH ()-[r:ASSOCIATED_WITH]->() WHERE r.weight > 0 "
+                "SET r.weight = CASE WHEN r.weight * 1.2 > 5.0 "
+                "THEN 5.0 ELSE r.weight * 1.2 END"
+            )
+        else:
+            return 0
+
+        self.graph.query(cypher)
+        return 1
 
     def get_stats(self) -> dict[str, int]:
         """Return node counts by label and total edge count."""
@@ -206,5 +248,6 @@ class Memory:
             edges.append({"id": f"e{row[0]}-{row[1]}",
                           "source": str(row[0]),
                           "target": str(row[1]),
-                          "type": row[2]})
+                          "type": row[2],
+                          "weight": row[3] if len(row) > 3 else 1.0})
         return {"nodes": nodes, "edges": edges}

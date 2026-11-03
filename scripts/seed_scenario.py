@@ -105,7 +105,7 @@ def seed(db):
                 {"mitre_id": mitre_id, "name": name})
         g.query(
             "MATCH (a:ThreatActor {id: 'TA-1'}), (t:TTP {mitre_id: $mitre_id}) "
-            "CREATE (a)-[:USES]->(t)",
+            "CREATE (a)-[:USES {weight: 1.0, last_recalled: 0}]->(t)",
             {"mitre_id": mitre_id},
         )
 
@@ -115,12 +115,12 @@ def seed(db):
                 {"value": value, "type": ioc_type})
         g.query(
             "MATCH (a:ThreatActor {id: 'TA-1'}), (i:IoC {value: $value}) "
-            "CREATE (a)-[:ASSOCIATED_WITH]->(i)",
+            "CREATE (a)-[:ASSOCIATED_WITH {weight: 1.0, last_recalled: 0}]->(i)",
             {"value": value},
         )
         g.query(
             "MATCH (t:TTP {mitre_id: $ttp}), (i:IoC {value: $value}) "
-            "CREATE (t)-[:PRODUCES]->(i)",
+            "CREATE (t)-[:PRODUCES {weight: 1.0}]->(i)",
             {"ttp": ttp, "value": value},
         )
 

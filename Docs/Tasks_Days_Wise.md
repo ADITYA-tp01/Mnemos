@@ -396,9 +396,14 @@ Each day has a clear goal, a task checklist, and a success criteria. Don't move 
   - Each reads from shared FalkorDB memory
   - Show concurrent recall latency in the UI
   - Serialize writes (or confirm no race conditions from Day 0 verification)
-- [ ] **Nice-to-have: Memory decay** (only if time permits):
+- [x] **Nice-to-have: Memory decay** (only if time permits):
   - Edge weights represent recall strength
   - Decay over time → less-recalled memories fade
+  - `Memory.decay_memory()` — multiplies all edge weights by `decay_rate` (0.9), tracks `last_decayed`
+  - `Memory.boost_recall()` — reinforces edges traversed during recall (×1.2, capped at 5.0), routes by edge type (`found`/`associated`/`all`)
+  - Weak edges (weight < 0.1) are pruned automatically
+  - Seed + write methods set `weight: 1.0` on all edges; recall queries return weights
+  - Verified: decay math (0.9^n), boost cap, pruning — all in `scripts/test_memory.py`
 - [x] **Complete the README** per the Rule 9 structure:
   - The Problem
   - Demo Video (placeholder link for now)

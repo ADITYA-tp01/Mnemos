@@ -76,6 +76,45 @@ def test_memory():
     for k, v in stats.items():
         print(f"  {k}: {v}")
 
+    print("\n=== Testing Memory Decay & Reinforcement ===")
+    # Baseline edge weights
+    w_before = mem.graph.query(
+        "MATCH ()-[r:FOUND]->() RETURN r.weight"
+    ).result_set[0][0]
+    print(f"  FOUND weight before decay: {w_before}")
+
+    # Decay 3 times (0.9^3 = 0.729)
+    for i in range(3):
+        d = mem.decay_memory()
+        assert d["edges_decayed"] >= 1, f"Expected >=1 decayed edge, got {d}"
+    w_after = mem.graph.query(
+        "MATCH ()-[r:FOUND]->() RETURN r.weight"
+    ).result_set[0][0]
+    print(f"  FOUND weight after 3 decays: {w_after}")
+    assert abs(w_after - 0.729) < 0.01, f"Expected ~0.729, got {w_after}"
+
+    # Boost on recall reinforces memory
+    assert mem.boost_recall("found") == 1
+    w_boosted = mem.graph.query(
+        "MATCH ()-[r:FOUND]->() RETURN r.weight"
+    ).result_set[0][0]
+    print(f"  FOUND weight after boost: {w_boosted}")
+    assert w_boosted > w_after, f"Boost should increase weight, {w_boosted} <= {w_after}"
+
+    # Unknown edge type is a no-op
+    assert mem.boost_recall("unknown") == 0
+    assert mem.boost_recall(None) == 0
+    print("  boost edge-type routing: PASS")
+
+    # Prune weak edges: decay until < 0.1 (0.9^n < 0.1 needs ~22 steps from 1.0)
+    for _ in range(40):
+        mem.decay_memory()
+    remaining = mem.graph.query(
+        "MATCH ()-[r:FOUND]->() RETURN count(r)"
+    ).result_set[0][0]
+    print(f"  FOUND edges after aggressive decay: {remaining}")
+    assert remaining == 0, f"Weak edges should be pruned, got {remaining}"
+
     print("\n=== All Tests Passed ===")
 
 

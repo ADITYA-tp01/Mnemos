@@ -1,11 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { proxyToBackend } from '@/lib/backend'
+
+export const dynamic = 'force-dynamic'
 
 export async function GET() {
-  try {
-    const response = await fetch('http://localhost:8000/api/memory/stats')
-    const data = await response.json()
-    return NextResponse.json(data)
-  } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch memory stats' }, { status: 500 })
-  }
+  return proxyToBackend('/memory/stats')
 }

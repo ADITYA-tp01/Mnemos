@@ -2,16 +2,27 @@
 
 Implements the perceive→recall→reason→act→write cycle for autonomous
 threat investigation using LLM function calling.
+
+LLM providers (env `LLM_PROVIDER`):
+  - ollama (default): local Ollama server at `OLLAMA_HOST`, model `LLM_MODEL`
+  - openai: needs `LLM_API_KEY` (or `OPENAI_API_KEY`), model `LLM_MODEL`.
+    Set `LLM_BASE_URL` for any OpenAI-compatible API (e.g. NVIDIA NIM:
+    https://integrate.api.nvidia.com/v1).
+`LLM_TIMEOUT` (seconds, default 90) bounds each LLM call; a cold local model
+needs more than a few seconds to load.
+If the LLM is unavailable the loop degrades gracefully (recall-only /
+deterministic fallback) and still persists a finding.
 """
 import json
 import os
 import random
 import time
+import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from backend.app.agent.tools import ToolRouter
-from backend.app.agent.memory import Memory
+from backend.app.agent.memory import Memory, jsonable
 
 
 # ---------------------------------------------------------------------------
@@ -31,7 +42,7 @@ You have access to the following tools:
 - recall_ioc: Check if an IoC was seen before
 - recall_asset: Check asset connections to known actors
 - recall_playbook: Find best playbook for a TTP
-- recall_cross_session: Get cross-session intelligence
+- recall_cross_session: Get cross-session intelligence for an alert
 - analyze_ioc: Simulated IoC analysis
 - scan_asset: Simulated asset scan
 - apply_playbook: Simulate playbook execution
@@ -41,6 +52,23 @@ You have access to the following tools:
 When you recall prior memory, cite the source in your reasoning.
 Always write findings after completing an investigation.
 When done, call investigation_complete with your final summary."""
+
+
+# ---------------------------------------------------------------------------
+# Tool-call objects (OpenAI-style: .function.name / .function.arguments JSON)
+# ---------------------------------------------------------------------------
+
+class _Function:
+    def __init__(self, name: str, arguments: Dict[str, Any]):
+        self.name = name
+        self.arguments = json.dumps(arguments)
+
+
+class ToolCall:
+    """Provider-neutral tool call."""
+
+    def __init__(self, name: str, arguments: Dict[str, Any]):
+        self.function = _Function(name, arguments)
 
 
 # ---------------------------------------------------------------------------
@@ -69,19 +97,29 @@ class AgentLoop:
         self.tools = tool_router
         self.llm_provider = os.environ.get("LLM_PROVIDER", "ollama").lower()
         self.ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-        self.llm_model = os.environ.get("LLM_MODEL", "qwen3:8b")
-        self.llm_enabled = True  # Always enabled with Ollama
+        default_model = "gpt-4o-mini" if self.llm_provider == "openai" else "qwen3:8b"
+        self.llm_model = os.environ.get("LLM_MODEL", default_model)
+        self._api_key = os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        self._base_url = os.environ.get("LLM_BASE_URL") or None
+        self.llm_timeout = float(os.environ.get("LLM_TIMEOUT", "90"))
+        self._openai_client = None
+        # Ollama needs no key (connection errors fall back at call time);
+        # OpenAI needs a key; unknown providers use the deterministic fallback.
+        self.llm_enabled = (self.llm_provider == "ollama"
+                            or (self.llm_provider == "openai" and bool(self._api_key)))
         self.session_id = f"session-{random.randint(1000, 9999)}"
         self.session_start = datetime.utcnow().isoformat() + "Z"
         self.session_count = 0
         self.transcript: List[TranscriptEntry] = []
         self.investigation_id: Optional[str] = None
+        self.current_alert_id: Optional[str] = None
         self.recall_history: List[Dict] = []  # Track all recall results
 
     def reset(self):
         """Clear in-memory state (for restart). Does NOT touch FalkorDB."""
         self.transcript = []
         self.investigation_id = None
+        self.current_alert_id = None
         self.session_count += 1
         self.session_id = f"session-{random.randint(1000, 9999)}"
         self.session_start = datetime.utcnow().isoformat() + "Z"
@@ -91,6 +129,14 @@ class AgentLoop:
         entry = TranscriptEntry(step, details)
         self.transcript.append(entry)
 
+    def serialize_transcript(self, entries: Optional[List[TranscriptEntry]] = None) -> List[Dict[str, Any]]:
+        """JSON-safe transcript (defaults to the whole in-memory transcript)."""
+        entries = self.transcript if entries is None else entries
+        return [
+            {"step": e.step, "details": jsonable(e.details), "timestamp": e.timestamp}
+            for e in entries
+        ]
+
     def perceive(self, alert: Dict[str, Any]) -> Dict[str, Any]:
         """Step 1: Receive and parse the alert."""
         self._add_transcript("perceive", {
@@ -98,8 +144,8 @@ class AgentLoop:
             "type": alert.get("type"),
             "severity": alert.get("severity"),
             "description": alert.get("description"),
-            "iocs": alert.get("iocs", []),
-            "assets": alert.get("assets", []),
+            "iocs": alert.get("iocs") or [],
+            "assets": alert.get("assets") or [],
         })
         return alert
 
@@ -110,14 +156,14 @@ class AgentLoop:
         total_latency = 0
 
         # R1: Episodic recall — "Have I seen this IoC before?"
-        for ioc in alert.get("iocs", []):
+        for ioc in alert.get("iocs") or []:
             r = self.memory.recall_ioc(ioc)
             recall_results[f"ioc_{ioc}"] = r
             query_names[f"ioc_{ioc}"] = "R1"
             total_latency += r["latency_ms"]
 
         # R3: Multi-hop recall — "Is this asset tied to a known actor?"
-        for asset_id in alert.get("assets", []):
+        for asset_id in alert.get("assets") or []:
             r = self.memory.recall_asset_actor(asset_id)
             recall_results[f"asset_{asset_id}"] = r
             query_names[f"asset_{asset_id}"] = "R3"
@@ -129,6 +175,14 @@ class AgentLoop:
         recall_results["cross_session"] = r
         query_names["cross_session"] = "R4"
         total_latency += r["latency_ms"]
+
+        # Reinforce: edges that recall traversed (non-empty results) get stronger
+        hit_iocs = [i for i in alert.get("iocs") or []
+                    if recall_results[f"ioc_{i}"].get("result")]
+        hit_assets = [a for a in alert.get("assets") or []
+                      if recall_results[f"asset_{a}"].get("result")]
+        if hit_iocs or hit_assets:
+            self.memory.reinforce(hit_iocs, hit_assets)
 
         # Build source attribution lines for the transcript
         attribution_lines = []
@@ -153,7 +207,79 @@ class AgentLoop:
 
         return recall_results
 
-    def reason(self, alert: Dict[str, Any], recall_context: Dict[str, Any], max_retries: int = 1) -> List[Dict]:
+    # ------------------------------------------------------------------
+    # Default finding (used when the LLM is off / fails / omits write_finding)
+    # ------------------------------------------------------------------
+
+    def _default_finding(self, alert: Dict[str, Any]) -> Dict[str, Any]:
+        """Deterministic finding derived from semantic memory, not hardcoded."""
+        iocs = alert.get("iocs") or []
+        ioc = iocs[0] if iocs else f"no-ioc-{alert.get('id', 'unknown')}"
+        actor, ttp = None, None
+        try:
+            actor, ttp = self.memory.lookup_actor_for_ioc(ioc)
+        except Exception:
+            pass  # memory unavailable — fall through to "unattributed"
+        if actor:
+            conclusion = f"Attributed to known threat actor {actor}"
+        else:
+            actor = "UNATTRIBUTED"
+            conclusion = "No known threat actor linked to this IoC; recorded for future recall"
+        return {"ioc": ioc, "actor": actor, "ttp": ttp or "unknown",
+                "conclusion": conclusion, "alert_id": alert.get("id")}
+
+    def _ensure_write_finding(self, tool_calls: List[Any], alert: Dict[str, Any]) -> List[Any]:
+        """Ensure write_finding is always called, even if LLM omits it."""
+        if any(getattr(tc.function, "name", "") == "write_finding" for tc in tool_calls):
+            return tool_calls
+        tool_calls.append(ToolCall("write_finding", self._default_finding(alert)))
+        return tool_calls
+
+    # ------------------------------------------------------------------
+    # LLM providers — each returns (content, [{"name", "arguments"}])
+    # ------------------------------------------------------------------
+
+    def _call_ollama(self, messages: List[Dict], tools: List[Dict]) -> Tuple[str, List[Dict]]:
+        import requests
+        response = requests.post(
+            f"{self.ollama_host}/api/chat",
+            json={"model": self.llm_model, "messages": messages,
+                  "tools": tools, "stream": False},
+            timeout=self.llm_timeout,
+        )
+        response.raise_for_status()
+        data = response.json()
+        if "message" not in data:
+            raise ValueError("Malformed LLM response: missing 'message' key")
+        message = data["message"]
+        calls = []
+        for tc in message.get("tool_calls") or []:
+            args = tc["function"].get("arguments") or {}
+            if isinstance(args, str):
+                args = json.loads(args)
+            calls.append({"name": tc["function"]["name"], "arguments": args})
+        return message.get("content", "") or "", calls
+
+    def _call_openai(self, messages: List[Dict], tools: List[Dict]) -> Tuple[str, List[Dict]]:
+        if self._openai_client is None:
+            from openai import OpenAI
+            self._openai_client = OpenAI(api_key=self._api_key, base_url=self._base_url)
+        response = self._openai_client.chat.completions.create(
+            model=self.llm_model,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+            timeout=self.llm_timeout,
+        )
+        message = response.choices[0].message
+        calls = [
+            {"name": tc.function.name,
+             "arguments": json.loads(tc.function.arguments or "{}")}
+            for tc in message.tool_calls or []
+        ]
+        return message.content or "", calls
+
+    def reason(self, alert: Dict[str, Any], recall_context: Dict[str, Any], max_retries: int = 1) -> List[Any]:
         """Step 3: Single LLM call with recalled context + available tools.
 
         Edge cases handled:
@@ -162,24 +288,21 @@ class AgentLoop:
         - Malformed LLM response → retry once, then graceful fallback
         """
         if not self.llm_enabled:
-            # Fallback: deterministic tool call sequence that persists findings
-            ioc = alert.get("iocs", ["powershell-loader-7d3a9b.exe"])[0]
-            actor = "APT-CRIMSON"
-            ttp = "T1059.001"
+            finding = self._default_finding(alert)
+            tool_calls = [
+                ToolCall("analyze_ioc", {"ioc_value": finding["ioc"]}),
+                ToolCall("recall_ioc", {"ioc_value": finding["ioc"]}),
+                ToolCall("write_finding", finding),
+            ]
             self._add_transcript("reason", {
                 "mode": "fallback_no_llm",
                 "content": "LLM not configured - using deterministic fallback",
                 "tool_calls": [
-                    {"name": "analyze_ioc", "arguments": {"ioc_value": ioc}},
-                    {"name": "recall_ioc", "arguments": {"ioc_value": ioc}},
-                    {"name": "write_finding", "arguments": {"ioc": ioc, "actor": actor, "ttp": ttp, "conclusion": "Attributed to known threat actor"}},
+                    {"name": tc.function.name, "arguments": json.loads(tc.function.arguments)}
+                    for tc in tool_calls
                 ],
             })
-            return [
-                type("TC", (), {"function": type("F", (), {"name": "analyze_ioc", "arguments": json.dumps({"ioc_value": ioc})})})(),
-                type("TC", (), {"function": type("F", (), {"name": "recall_ioc", "arguments": json.dumps({"ioc_value": ioc})})})(),
-                type("TC", (), {"function": type("F", (), {"name": "write_finding", "arguments": json.dumps({"ioc": ioc, "actor": actor, "ttp": ttp, "conclusion": "Attributed to known threat actor"})})})(),
-            ]
+            return tool_calls
 
         # Serialize recall context for LLM — include source attribution
         context_summary = []
@@ -191,6 +314,7 @@ class AgentLoop:
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": (
+                f"Alert ID: {alert.get('id')} Investigation ID: {self.investigation_id} "
                 f"Alert: {alert.get('description')} "
                 f"[{alert.get('type')}] [{alert.get('severity')}] "
                 f"IoCs: {alert.get('iocs')} Assets: {alert.get('assets')} "
@@ -199,86 +323,23 @@ class AgentLoop:
         ]
 
         tools = self.tools.get_tools_schema()
-
-        # Convert OpenAI tool format to Ollama format
-        ollama_tools = []
-        for t in tools:
-            if t["type"] == "function":
-                f = t["function"]
-                ollama_tools.append({
-                    "type": "function",
-                    "function": {
-                        "name": f["name"],
-                        "description": f["description"],
-                        "parameters": f["parameters"]
-                    }
-                })
+        call_llm = self._call_openai if self.llm_provider == "openai" else self._call_ollama
 
         last_error = None
         for attempt in range(max_retries + 1):
             try:
-                if self.llm_provider == "ollama":
-                    import requests
-                    url = f"{self.ollama_host}/api/chat"
-                    payload = {
-                        "model": self.llm_model,
-                        "messages": messages,
-                        "tools": ollama_tools,
-                        "stream": False,
-                    }
-                    response = requests.post(url, json=payload, timeout=30)
-                    response.raise_for_status()
-                    data = response.json()
-
-                    # Validate response shape
-                    if "message" not in data:
-                        raise ValueError(f"Malformed LLM response: missing 'message' key")
-
-                    tool_calls = []
-                    if "tool_calls" in data["message"]:
-                        for tc in data["message"]["tool_calls"]:
-                            tool_calls.append(type("TC", (), {
-                                "function": type("F", (), {
-                                    "name": tc["function"]["name"],
-                                    "arguments": json.dumps(tc["function"]["arguments"])
-                                })()
-                            })())
-
-                    self._add_transcript("reason", {
-                        "model": self.llm_model,
-                        "provider": "ollama",
-                        "content": data.get("message", {}).get("content", ""),
-                        "tool_calls": [
-                            {"name": tc["function"]["name"], "arguments": tc["function"]["arguments"]}
-                            for tc in data.get("message", {}).get("tool_calls", [])
-                        ],
-                    })
-                    tool_calls = self._ensure_write_finding(tool_calls, alert)
-                    return tool_calls
-                else:
-                    # OpenAI path
-                    response = self.client.chat.completions.create(
-                        model=os.environ.get("LLM_MODEL", "gpt-4o-mini"),
-                        messages=messages,
-                        tools=tools,
-                        tool_choice="auto",
-                        timeout=30,
-                    )
-                    choice = response.choices[0]
-                    self._add_transcript("reason", {
-                        "model": os.environ.get("LLM_MODEL", "gpt-4o-mini"),
-                        "content": choice.message.content,
-                        "tool_calls": [
-                            {
-                                "name": tc.function.name,
-                                "arguments": json.loads(tc.function.arguments)
-                            }
-                            for tc in choice.message.tool_calls or []
-                        ],
-                        "latency_ms": response.usage.total_tokens if response.usage else 0,
-                    })
-                    tool_calls = self._ensure_write_finding(choice.message.tool_calls or [], alert)
-                    return tool_calls
+                start = time.perf_counter()
+                content, calls = call_llm(messages, tools)
+                latency_ms = round((time.perf_counter() - start) * 1000, 2)
+                self._add_transcript("reason", {
+                    "model": self.llm_model,
+                    "provider": self.llm_provider,
+                    "content": content,
+                    "tool_calls": calls,
+                    "latency_ms": latency_ms,
+                })
+                tool_calls = [ToolCall(c["name"], c["arguments"]) for c in calls]
+                return self._ensure_write_finding(tool_calls, alert)
             except Exception as e:
                 last_error = e
                 self._add_transcript("reason_error", {
@@ -286,9 +347,6 @@ class AgentLoop:
                     "attempt": attempt + 1,
                     "max_attempts": max_retries + 1,
                 })
-                if attempt < max_retries:
-                    continue  # retry once
-                break
 
         # All retries exhausted — graceful fallback
         if has_recall:
@@ -306,27 +364,6 @@ class AgentLoop:
             })
         return self._ensure_write_finding([], alert)
 
-    def _ensure_write_finding(self, tool_calls: List[Any], alert: Dict[str, Any]) -> List[Any]:
-        """Ensure write_finding is always called, even if LLM omits it."""
-        has_write = any(
-            getattr(tc.function, "name", "") == "write_finding" for tc in tool_calls
-        )
-        if has_write:
-            return tool_calls
-
-        ioc = alert.get("iocs", ["powershell-loader-7d3a9b.exe"])[0]
-        actor = "APT-CRIMSON"
-        ttp = "T1059.001"
-        tc = type("TC", (), {
-            "function": type("F", (), {
-                "name": "write_finding",
-                "arguments": json.dumps({"ioc": ioc, "actor": actor, "ttp": ttp,
-                                         "conclusion": "Attributed to known threat actor"})
-            })()
-        })()
-        tool_calls.append(tc)
-        return tool_calls
-
     def act(self, tool_calls: List[Any]) -> List[Dict]:
         """Step 4: Execute the tools selected by the LLM."""
         actions = []
@@ -342,30 +379,40 @@ class AgentLoop:
             })
         return actions
 
-    def write(self, actions: List[Dict]):
-        """Step 5: Persist findings to FalkorDB."""
+    def write(self, actions: List[Dict], alert: Optional[Dict[str, Any]] = None):
+        """Step 5: Persist findings to FalkorDB (one Investigation per run)."""
+        finding = None
         for action in actions:
-            if action["tool"] == "write_finding":
-                args = action["args"]
-                self.memory.write_memory(args["ioc"], "finding", args["actor"])
-                self.memory.write_investigation(
-                    inv_id=self.investigation_id,
-                    alert_id=self.current_alert_id,
-                    findings=[args["ioc"]],
-                    conclusion=args["conclusion"],
-                    actor_name=args["actor"]
-                )
-                self._add_transcript("write", {
-                    "action": "persisted",
-                    "ioc": args["ioc"],
-                    "actor": args["actor"],
-                    "ttp": args["ttp"],
-                })
+            if action["tool"] == "write_finding" and action["result"].get("success"):
+                finding = action["args"]
+                break
+        if finding is None:
+            # The LLM's write_finding was missing or invalid — persist a default one.
+            alert = alert or {"id": self.current_alert_id}
+            finding = self._default_finding(alert)
+
+        self.memory.write_memory(finding["ioc"], "finding", finding["actor"])
+        self.memory.write_investigation(
+            inv_id=self.investigation_id,
+            alert_id=self.current_alert_id,
+            findings=[finding["ioc"]],
+            conclusion=finding["conclusion"],
+            actor_name=finding["actor"],
+        )
+        # Remember where the IoC was seen so R3 can answer next time
+        self.memory.link_ioc_to_assets(finding["ioc"], (alert or {}).get("assets") or [])
+        self._add_transcript("write", {
+            "action": "persisted",
+            "ioc": finding["ioc"],
+            "actor": finding["actor"],
+            "ttp": finding.get("ttp", "unknown"),
+        })
 
     def run(self, alert: Dict[str, Any]) -> Dict[str, Any]:
         """Execute full agent loop: perceive→recall→reason→act→write."""
-        self.investigation_id = f"INV-{int(time.time()) % 10000:04d}"
+        self.investigation_id = f"INV-{uuid.uuid4().hex[:8].upper()}"
         self.current_alert_id = alert.get("id", "ALERT-001")
+        start_index = len(self.transcript)
 
         # Perceive
         alert_ctx = self.perceive(alert)
@@ -380,7 +427,7 @@ class AgentLoop:
         actions = self.act(tool_calls)
 
         # Write
-        self.write(actions)
+        self.write(actions, alert_ctx)
 
         return {
             "investigation_id": self.investigation_id,
@@ -388,12 +435,5 @@ class AgentLoop:
             "session_start": self.session_start,
             "is_fresh_session": self.session_count == 0,
             "previous_session_count": self.session_count,
-            "transcript": [
-                {
-                    "step": e.step,
-                    "details": e.details,
-                    "timestamp": e.timestamp,
-                }
-                for e in self.transcript
-            ],
+            "transcript": self.serialize_transcript(self.transcript[start_index:]),
         }

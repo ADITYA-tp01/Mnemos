@@ -64,7 +64,7 @@ def replay(agent, alert, calls):
     actions = agent.act(tool_calls)
     agent.current_alert_id = alert["id"]
     agent.investigation_id = f"INV-{len(agent.transcript):04d}"
-    agent.write(actions)
+    agent.write(actions, alert)
     return {
         "investigation_id": agent.investigation_id,
         "session_id": agent.session_id,

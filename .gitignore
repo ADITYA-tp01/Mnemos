@@ -10,8 +10,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -57,3 +57,8 @@ dump.rdb
 # OS
 Thumbs.db
 ehthumbs.db
+# Local planning docs (not for GitHub)
+Docs/Plan.md
+Docs/Tasks_Days_Wise.md
+Docs/Session.md
+Docs/Design.md

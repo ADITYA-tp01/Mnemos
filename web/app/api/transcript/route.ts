@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { proxyToBackend } from '@/lib/backend'
+
+export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url)
-  const alertId = searchParams.get('alertId')
+  const alertId = new URL(request.url).searchParams.get('alertId')
 
   if (!alertId) {
     return NextResponse.json({ error: 'alertId is required' }, { status: 400 })
   }
 
-  try {
-    const response = await fetch(`http://localhost:8000/api/investigate/${alertId}/transcript`)
-    const data = await response.json()
-    return NextResponse.json(data)
-  } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch transcript' }, { status: 500 })
-  }
+  return proxyToBackend(`/investigate/${encodeURIComponent(alertId)}/transcript`)
 }

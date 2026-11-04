@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   falkordb:
     image: falkordb/falkordb:latest
@@ -17,8 +15,8 @@ services:
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: mnemos-backend
     restart: unless-stopped
     depends_on:
@@ -32,6 +30,16 @@ services:
       FALKORDB_HOST: falkordb
       FALKORDB_PORT: "6379"
       PYTHONUNBUFFERED: "1"
+      # A host Ollama is not on the container's localhost
+      OLLAMA_HOST: ${OLLAMA_HOST_DOCKER:-http://host.docker.internal:11434}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
 
   web:
     build:

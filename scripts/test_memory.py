@@ -1,4 +1,4 @@
-"""Test script for memory module — Day 2 verification.
+"""Integration test for the memory module (needs FalkorDB on :6379).
 
 Seeds graph, tests all recall queries (R1-R4), writes data, then
 verifies recall returns results. Prints latency for each query.
@@ -54,6 +54,19 @@ def test_memory():
     r = mem.recall_ioc("powershell-loader-7d3a9b.exe")
     assert len(r["result"]) == 1, f"Expected 1 result, got {len(r['result'])}"
     print(f"  R1 recall_ioc: PASS ({r['latency_ms']}ms)")
+
+    # R3 learns from episodic writes: IoC observed on asset -> actor reachable
+    assert mem.link_ioc_to_assets("powershell-loader-7d3a9b.exe", ["ASSET-001"]) == 1
+    r = mem.recall_asset_actor("ASSET-001")
+    assert len(r["result"]) == 1, f"Expected R3 path after link, got {r['result']}"
+    print(f"  R3 recall_asset_actor: PASS ({r['latency_ms']}ms)")
+
+    # Targeted reinforcement boosts only the traversed edges
+    w0 = mem.graph.query("MATCH ()-[r:OBSERVED_ON]->(:Asset {id: 'ASSET-001'}) RETURN r.weight").result_set[0][0]
+    mem.reinforce([], ["ASSET-001"])  # assets only: keeps FOUND weights for the decay test below
+    w1 = mem.graph.query("MATCH ()-[r:OBSERVED_ON]->(:Asset {id: 'ASSET-001'}) RETURN r.weight").result_set[0][0]
+    assert w1 > w0, f"reinforce should boost OBSERVED_ON ({w0} -> {w1})"
+    print("  reinforce: PASS")
 
     # R2 should now return the playbook
     r = mem.recall_playbook("T1059.001")

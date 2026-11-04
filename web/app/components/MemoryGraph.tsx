@@ -17,30 +17,44 @@ interface GraphData {
   }>
 }
 
-export default function MemoryGraph() {
+// Color by memory type: semantic = blue, episodic = green, procedural = purple
+const SEMANTIC = ['ThreatActor', 'TTP', 'IoC', 'Asset']
+const EPISODIC = ['Alert', 'Investigation']
+const PROCEDURAL = ['Playbook', 'Action']
+
+const nodeColor = (label: string) => {
+  if (SEMANTIC.includes(label)) return '#3b82f6'
+  if (EPISODIC.includes(label)) return '#10b981'
+  if (PROCEDURAL.includes(label)) return '#a855f7'
+  return '#6b7280'
+}
+
+export default function MemoryGraph({ refreshKey }: { refreshKey: number }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [data, setData] = useState<GraphData | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    let cancelled = false
     fetch('/api/memory/graph')
-      .then((res) => res.json())
-      .then((json) => setData(json))
-      .catch((err) => setError(err.message))
-  }, [])
+      .then(async (res) => {
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.detail || json.error || `Request failed (${res.status})`)
+        if (!cancelled) {
+          setData(json)
+          setError(null)
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [refreshKey])
 
   useEffect(() => {
     if (!data || !containerRef.current) return
-
-    // Clean up previous instance
-    if (containerRef.current) {
-      const prevInstance = containerRef.current.dataset.cyref
-      if (prevInstance) {
-        // Remove old instance (stored globally)
-        const oldCy = (window as any).__mnemos_cytoscape_instances?.[prevInstance]
-        oldCy?.destroy()
-      }
-    }
 
     const cy = cytoscape({
       container: containerRef.current,
@@ -57,20 +71,11 @@ export default function MemoryGraph() {
         {
           selector: 'node',
           style: {
-            'background-color': (ele: any) => {
-              const label = ele.data('label')
-              switch (label) {
-                case 'ThreatActor': return '#3b82f6'
-                case 'TTP': return '#8b5cf6'
-                case 'IoC': return '#f59e0b'
-                case 'Asset': return '#10b981'
-                case 'Alert': return '#ef4444'
-                case 'Investigation': return '#06b6d4'
-                case 'Playbook': return '#a855f7'
-                default: return '#6b7280'
-              }
+            'background-color': (ele: any) => nodeColor(ele.data('label')),
+            label: (ele: any) => {
+              const p = ele.data('properties') || {}
+              return String(p.name || p.value || p.mitre_id || p.id || ele.data('label'))
             },
-            label: 'data(label)',
             'text-wrap': 'wrap',
             'text-max-width': '120px',
             'text-valign': 'top',
@@ -85,6 +90,7 @@ export default function MemoryGraph() {
         {
           selector: 'edge',
           style: {
+            'curve-style': 'bezier',
             'line-color': '#374151',
             'target-arrow-color': '#374151',
             'target-arrow-shape': 'triangle',
@@ -109,31 +115,30 @@ export default function MemoryGraph() {
       boxSelectionEnabled: false,
     })
 
-    // Store for cleanup
-    if (containerRef.current) {
-      containerRef.current.dataset.cyref = 'main-graph'
-      ;(window as any).__mnemos_cytoscape_instances = {
-        ...(window as any).__mnemos_cytoscape_instances,
-        'main-graph': cy,
-      }
-    }
-
     return () => {
       cy.destroy()
     }
   }, [data])
 
-  if (error) {
-    return <p className="text-accent-red text-xs">Error loading graph: {error}</p>
-  }
-
   if (!data) {
-    return <p className="text-text-secondary text-xs">Loading graph...</p>
+    return error ? (
+      <p className="text-accent-red text-xs">Error loading graph: {error}</p>
+    ) : (
+      <p className="text-text-secondary text-xs">Loading graph...</p>
+    )
   }
 
   return (
-    <div className="h-96 bg-background rounded border border-surface-border overflow-hidden">
-      <div ref={containerRef} className="w-full h-full" />
+    <div>
+      <div className="flex gap-3 mb-2 text-xs text-text-secondary">
+        <span><span className="inline-block w-2 h-2 rounded-full bg-accent-blue mr-1" />Semantic</span>
+        <span><span className="inline-block w-2 h-2 rounded-full bg-accent-green mr-1" />Episodic</span>
+        <span><span className="inline-block w-2 h-2 rounded-full bg-accent-purple mr-1" />Procedural</span>
+        {error && <span className="text-accent-red ml-auto">Stale: {error}</span>}
+      </div>
+      <div className="h-96 bg-background rounded border border-surface-border overflow-hidden">
+        <div ref={containerRef} className="w-full h-full" />
+      </div>
     </div>
   )
 }

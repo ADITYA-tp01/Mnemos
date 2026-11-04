@@ -1,8 +1,8 @@
 """Mnemos — Swarm mode: 3 parallel hunter agents sharing one FalkorDB graph.
 
 Each hunter runs the same perceive→recall→reason→act→write loop as a
-single AgentLoop, but they all read/write the same graph concurrently.
-Day 0 verification confirmed concurrent writes are corruption-free.
+single AgentLoop, but they all read/write the same graph concurrently
+(FalkorDB serializes writes per graph, so concurrent writers don't corrupt it).
 """
 import os
 import sys

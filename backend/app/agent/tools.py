@@ -5,9 +5,9 @@ Memory tools connect to real FalkorDB; simulated tools return
 deterministic synthetic data for demo purposes.
 """
 import random
+import zlib
 from typing import Any, Callable, Dict, List
 
-from falkordb import FalkorDB
 from backend.app.agent.memory import Memory
 
 
@@ -28,15 +28,16 @@ def simulate_ioc_analysis(ioc_value: str) -> Dict[str, Any]:
 
 def simulate_asset_scan(asset_id: str) -> Dict[str, Any]:
     """Simulate asset scan — returns realistic findings."""
-    random.seed(hash(asset_id) % 2**32)
+    # crc32 (not hash()) so results are stable across processes
+    rng = random.Random(zlib.crc32(asset_id.encode()))
     findings = []
-    if random.random() > 0.5:
+    if rng.random() > 0.5:
         findings.append("Unusual outbound traffic detected on port 443")
-    if random.random() > 0.7:
+    if rng.random() > 0.7:
         findings.append("Suspicious process execution logged")
     if not findings:
         findings.append("No anomalies detected")
-    return {"asset_id": asset_id, "findings": findings, "risk_score": round(random.uniform(0, 1), 2)}
+    return {"asset_id": asset_id, "findings": findings, "risk_score": round(rng.uniform(0, 1), 2)}
 
 
 def simulate_playbook_application(playbook_name: str) -> Dict[str, Any]:
@@ -69,6 +70,7 @@ class ToolRouter:
         self._tools["recall_playbook"] = self.memory.recall_playbook
         self._tools["recall_cross_session"] = self.memory.recall_cross_session
         self._tools["write_finding"] = self._write_finding
+        self._tools["investigation_complete"] = self._investigation_complete
 
         # Simulated tools
         self._tools["analyze_ioc"] = simulate_ioc_analysis
@@ -80,6 +82,10 @@ class ToolRouter:
         """Record a finding for persistence by the agent loop's write step."""
         return {"status": "recorded", "actor": actor, "ttp": ttp,
                 "alert_id": alert_id, "inv_id": inv_id}
+
+    def _investigation_complete(self, summary: str = "") -> Dict[str, Any]:
+        """Signal that the LLM considers the investigation finished."""
+        return {"status": "complete", "summary": summary}
 
     def get_tools_schema(self) -> List[Dict[str, Any]]:
         """Return OpenAI-compatible tool schema for LLM function calling."""
@@ -130,13 +136,14 @@ class ToolRouter:
                 "type": "function",
                 "function": {
                     "name": "recall_cross_session",
-                    "description": "Recall shared actors and IoCs from all prior investigations",
+                    "description": "Recall shared actors and IoCs from prior investigations linked to an alert",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "current_inv_id": {"type": "string", "description": "Current investigation ID for context"}
+                            "alert_id": {"type": "string", "description": "The alert being investigated"},
+                            "current_inv_id": {"type": "string", "description": "Current investigation ID (excluded from results)"}
                         },
-                        "required": ["current_inv_id"]
+                        "required": ["alert_id"]
                     }
                 }
             },
@@ -208,7 +215,9 @@ class ToolRouter:
                     "description": "Signal that the investigation is complete",
                     "parameters": {
                         "type": "object",
-                        "properties": {},
+                        "properties": {
+                            "summary": {"type": "string", "description": "Final summary of the investigation"}
+                        },
                         "required": []
                     }
                 }

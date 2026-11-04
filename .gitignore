@@ -58,7 +58,5 @@ dump.rdb
 Thumbs.db
 ehthumbs.db
 # Local planning docs (not for GitHub)
-Docs/Plan.md
 Docs/Tasks_Days_Wise.md
 Docs/Session.md
-Docs/Design.md
